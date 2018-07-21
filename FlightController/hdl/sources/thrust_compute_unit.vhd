@@ -1,49 +1,56 @@
-Library IEEE;
+-- Author: Oliver Johnson
+-- Thrust Compute Unit entity
+-- TODO implement overflow/underflow error catching
+
+library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-entity pwm_driver is
+library work;
+use work.common_pkg;
+
+entity pid is
   generic (
-    PWM_PERIOD          : positive range 1 to 1_000_000 := 1_000 -- PWM major period in microseconds
-    PWM_SCHEME          : boolean := false -- PWM control scheme; true - centered; false - directional
+    BIT_WIDTH           : positive range 1 to 32 := 16; -- Common data bit-width (signed)
+    NUM_ROTORS          : positive range 2 to 8 := 4; -- Number of rotors
+    ROTOR_POS           : std_logic_array(NUM_ROTORS - 1 downto 0)(BIT_WIDTH - 1 downto 0) := (x"1FFF_FFFF", x"5FFF_FFFF", x"9FFF_FFFF", x"DFFF_FFFF") -- Vector of rotor angular positions (signed): 0x80000000 = -pi rad, 0x00000000 = 0 rad, 0x7FFFFFFF = pi rad
   );
   port (
     CLK                 : in std_logic; -- 200 MHz system clock
     RST                 : in std_logic; -- Active high synchronous reset
-    DUTY_CYCLE          : in std_logic_vector(31 downto 0); -- 32-bit signed duty cycle. 0x80000000 = -100%, 0x00000000 = 0%, 0x7FFFFFFF = 100%
-    PWM_SIGNAL          : out std_logic; -- PWM driver signal
-    PWM_DIR             : out std_logic -- Directional bit (not used in cenetered mode)
+    ENABLE              : in std_logic; -- Module Enable
+    IN_VECTOR           : in std_logic_array(2 downto 0)(BIT_WIDTH - 1 downto 0)
+    OUT_VALID           : out std_logic; -- Signals valid data on all OUT_DATA buses
+    OUT_DATA            : out std_logic_array(NUM_ROTORS - 1 downto 0)(BIT_WIDTH - 1 downto 0) -- Signed fixed-point unity power levels for all rotors
   );
-end entity pwm_driver;
+end entity pid;
 
-architecture behavioral of pwm_driver is
+architecture behavioral of pid is
 
-  constant dwell_counter_max        : unsigned(31 downto 0) := to_unsigned(200 * PWM_PERIOD, 32);
-  constant pwm_counter_offset       : unsigned(31 downto 0) := (others => '0') when not PWM_SCHEME else dwell_counter_max / 2;
+  signal long0                      : signed((2 * BIT_WIDTH) - 1 downto 0) := (others => '0'); -- std_logic_vector((2 * BIT_WIDTH) - 1 downto 0) := (others => '0');
+  signal long1                      : signed((2 * BIT_WIDTH) - 1 downto 0) := (others => '0'); -- std_logic_vector((2 * BIT_WIDTH) - 1 downto 0) := (others => '0');
+  signal long2                      : signed((2 * BIT_WIDTH) - 1 downto 0) := (others => '0'); -- std_logic_vector((2 * BIT_WIDTH) - 1 downto 0) := (others => '0');
 
-  signal dwell_counter              : unsigned(31 downto 0) := (others => '0');
-  signal pwm_counter_val            : unsigned(63 downto 0) := (others => '0');
+  type state_type is (stIdle, stFlag, stRegParams, stMultiply, stSum);
+  signal state                      : state_type := stIdle;
 
 begin
 
+  -- Process to trigger the PID execution once every SAMPLE_PERIOD milliseconds
   trigger_proc : process(CLK)
   begin
     if rising_edge(CLK) then
       if RST = '1' then
-        PWM_SIGNAL <= '0';
-        PWM_DIR <= '0';
+        loop_trigger <= '0';
         dwell_counter <= dwell_counter_max - '1';
-        pwm_counter_val <= pwm_counter_offset;
       else
         if dwell_counter = to_unsigned(0, 32) then
-          pwm_counter_val <= DUTY_CYCLE * unsigned('0' & (not dwell_counter_max(30 downto 0)));
-          PWM_DIR <= DUTY_CYCLE(31);
+          loop_trigger <= '1';
           dwell_counter <= dwell_counter_max - '1';
         else
+          loop_trigger <= '0';
           dwell_counter <= dwell_counter - '1';
         end if;
-
-        --if dwell_counter =
       end if;
     end if;
   end process trigger_proc;
@@ -80,15 +87,15 @@ begin
           when stRegParams =>
             SAMPLE_FLAG <= '0';
             e_k1 <= e_k0;
-            e_k0 <= to_signed(SETPOINT) - to_signed(PROCESS_VAR);
+            e_k0 <= signed(SETPOINT) - signed(PROCESS_VAR);
             u_k1 <= u_k0;
             y_k2 <= y_k1;
             y_k1 <= y_k0;
-            y_k0 <= to_signed(PROCESS_VAR);
-            sp_k0 <= to_signed(SETPOINT);
-            k_p <= to_signed(KP);
-            k_i <= to_signed(KI);
-            k_d <= to_signed(KD);
+            y_k0 <= signed(PROCESS_VAR);
+            sp_k0 <= signed(SETPOINT);
+            k_p <= signed(KP);
+            k_i <= signed(KI);
+            k_d <= signed(KD);
             state <= stMultiply;
 
           when stMultiply =>

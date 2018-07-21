@@ -45,7 +45,7 @@ architecture behavioral of pid is
   signal long2                      : signed((2 * BIT_WIDTH) - 1 downto 0) := (others => '0'); -- std_logic_vector((2 * BIT_WIDTH) - 1 downto 0) := (others => '0');
 
   type state_type is (stIdle, stFlag, stRegParams, stMultiply, stSum);
-  signal state                      : std_logic_vector(3 downto 0) := (others => '0');
+  signal state                      : state_type := stIdle;
 
 begin
 
