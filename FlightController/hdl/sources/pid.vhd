@@ -1,3 +1,7 @@
+-- Author: Oliver Johnson
+-- PID control loop entity
+-- TODO implement overflow/underflow error catching
+
 Library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
@@ -11,8 +15,8 @@ entity pid is
     CLK                 : in std_logic; -- 200 MHz system clock
     RST                 : in std_logic; -- Active high synchronous reset
     KP                  : in std_logic_vector(BIT_WIDTH - 1 downto 0); -- Proportional coefficient
-    KI                  : in std_logic_vector(BIT_WIDTH - 1 downto 0); -- Integral Coefficient
-    KD                  : in std_logic_vector(BIT_WIDTH - 1 downto 0); -- Derivative Coefficient
+    KI                  : in std_logic_vector(BIT_WIDTH - 1 downto 0); -- Integral coefficient
+    KD                  : in std_logic_vector(BIT_WIDTH - 1 downto 0); -- Derivative coefficient
     ENABLE              : in std_logic; -- PID Enable
     SAMPLE_FLAG         : out std_logic; -- Signals that SETPOINT and PROCESS_VAR will be registered on the next clock rising edge
     SETPOINT            : in std_logic_vector(BIT_WIDTH - 1 downto 0); -- Setpoint (must be valid during clock after SAMPLE_FLAG)
@@ -24,7 +28,7 @@ end entity pid;
 
 architecture behavioral of pid is
 
-  signal dwell_counter_max          : unsigned(31 downto 0) := to_unsigned(200_000 * SAMPLE_PERIOD, 32);
+  constant dwell_counter_max        : unsigned(31 downto 0) := to_unsigned(200_000 * SAMPLE_PERIOD, 32);
   signal dwell_counter              : unsigned(31 downto 0) := (others => '0');
   signal loop_trigger               : std_logic := '0';
   signal sp_k0                      : signed(BIT_WIDTH - 1 downto 0) := (others => '0'); -- std_logic_vector(BIT_WIDTH - 1 downto 0) := (others => '0');
@@ -55,10 +59,10 @@ begin
       else
         if dwell_counter = to_unsigned(0, 32) then
           loop_trigger <= '1';
-          dwell_counter <= dwell_counter - '1';
+          dwell_counter <= dwell_counter_max - '1';
         else
           loop_trigger <= '0';
-          dwell_counter <= dwell_counter_max - '1';
+          dwell_counter <= dwell_counter - '1';
         end if;
       end if;
     end if;
@@ -96,15 +100,15 @@ begin
           when stRegParams =>
             SAMPLE_FLAG <= '0';
             e_k1 <= e_k0;
-            e_k0 <= to_signed(SETPOINT) - to_signed(PROCESS_VAR);
+            e_k0 <= signed(SETPOINT) - signed(PROCESS_VAR);
             u_k1 <= u_k0;
             y_k2 <= y_k1;
             y_k1 <= y_k0;
-            y_k0 <= to_signed(PROCESS_VAR);
-            sp_k0 <= to_signed(SETPOINT);
-            k_p <= to_signed(KP);
-            k_i <= to_signed(KI);
-            k_d <= to_signed(KD);
+            y_k0 <= signed(PROCESS_VAR);
+            sp_k0 <= signed(SETPOINT);
+            k_p <= signed(KP);
+            k_i <= signed(KI);
+            k_d <= signed(KD);
             state <= stMultiply;
 
           when stMultiply =>
