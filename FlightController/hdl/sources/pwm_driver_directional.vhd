@@ -1,3 +1,7 @@
+-- Author: Oliver Johnson
+-- Directional PWM Driver entity
+-- TODO this doesn't work right now
+
 Library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
@@ -31,17 +35,19 @@ begin
         PWM_SIGNAL <= '0';
         PWM_DIR <= '0';
         dwell_counter <= dwell_counter_max - '1';
-        pwm_counter_val <= pwm_counter_offset;
+        pwm_counter_val <= pwm_counter_offset(63 downto 32);
       else
         if dwell_counter = to_unsigned(0, 32) then
           pwm_counter_val <= DUTY_CYCLE * unsigned('0' & (not dwell_counter_max(30 downto 0)));
-          PWM_DIR <= DUTY_CYCLE(31);
+          PWM_SIGNAL <= '0';
           dwell_counter <= dwell_counter_max - '1';
         else
           dwell_counter <= dwell_counter - '1';
         end if;
 
-        --if dwell_counter =
+        if dwell_counter = pwm_counter_val + pwm_counter_offset(63 downto 32)) then
+          PWM_SIGNAL <= '1';
+        end if;
       end if;
     end if;
   end process pwm_proc;

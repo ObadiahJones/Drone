@@ -114,7 +114,7 @@ begin
           when stMultiply =>
             long0 <= k_p * (y_k1 - y_k0);
             long1 <= k_i * e_k0;
-            long2 <= k_d * ((y_k1(30 downto 1) & '0') - y_k2 - y_k0);
+            long2 <= k_d * ((y_k1(30 downto 0) & '0') - y_k2 - y_k0);
             state <= stSum;
 
           when stSum =>
