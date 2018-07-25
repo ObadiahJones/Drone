@@ -5,49 +5,53 @@ USE ieee.std_logic_unsigned.all;
 
 entity UART_Master is
 	GENERIC(
-		sysCLK		: integer := 50; -- in MHz
-		buad		: integer := 9600);
+		sysCLK			: integer := 50; -- in MHz
+		buad				: integer := 9600);
 	Port(
-		iCLK		: in std_logic; -- system Clock
+		iCLK				: in std_logic; -- system Clock
 		-- control signals
-		enableS		: in std_logic; -- enable send
-		enableR		: in std_logic; -- enable recieve
-		parity		: in std_logic; --
-		stopBits	: in std_logic; -- 0 = 1 stop bit, 1 = 2 stop bits
-		parityBit	: in std_logic; -- 0 no parity bit, 1 has parity bit
-		sendBusy	: out std_logic;
+		enableS			: in std_logic; -- enable send
+		enableR			: in std_logic; -- enable recieve
+		parity			: in std_logic; --
+		stopBits		: in std_logic; -- 0 = 1 stop bit, 1 = 2 stop bits
+		parityBit		: in std_logic; -- 0 no parity bit, 1 has parity bit
+		sendBusy		: out std_logic;
 		recieveBusy	: out std_logic;
-		error		: out std_logic;
+		error_sig		: out std_logic;
 		-- interface signals
-		rX			: in std_logic;
-		tX			: out std_logic;
+		rX					: in std_logic;
+		tX					: out std_logic;
 		-- data registers
-		sendB		: in std_logic_vector(7 downto 0);
-		receiveB	: out std_logic_vector(7 downto 0));
+		sendByte		: in std_logic_vector(7 downto 0);
+		receiveByte	: out std_logic_vector(7 downto 0));
 end UART_Master;
 
 architecture behavioral of UART_Master is
 type sendMachine is (Ready, StartBit, DataBit, ParityBit, StopBit, StopBit2);
 type receiveMachine is (Ready, StartBit, DataBit, ParityBit, StopBit, StopBit2, ClearData);
 
-sendState		: sendMachine := Ready;
-sendReceive		: receiveMachine := Ready;
+sendState				: sendMachine := Ready;
+sendReceive			: receiveMachine := Ready;
 
-sendPointer		: integer := 7;
+
+sendPointer			: integer := 7;
 receivePointer	: integer := 7;
-receiveBTemp	: std_logic_vector(7 downto 0);
 
-dataBitsHigh	: integer := 0;
+receiveTemp			: std_logic_vector(7 downto 0) := x"0000";
+sendTemp				: std_logic_vector(7 downto 0) := x"0000";
 
-baudCLK			: std_logic;
+sendParity			: std_logic;
+recieveParity		: std_logic;
+
+baudCLK					: std_logic;
 
 begin
+--Parity bit Calculaution
+sendParity <= sendB(7) + sendB(6) + sendB(5) + sendB(4) + sendB(3) + sendB(2) + sendB(1) + sendB(0)
 
 --Baud Clock generator -- assumes input clock of 50 MHz
 process(iCLK)
 begin
-
-
 
 end process;
 
@@ -107,28 +111,35 @@ if rising_edge(baudCLK) then
 			end if;
 		when DataBit =>
 			receivePointer <= receivePointer - 1;
-			receiveB(receivePointer) <= rX;
-
-			if (rX = 1)
-				dataBitsHigh <= dataBitsHigh + 1;
-			end if;
-
+			receiveTemp(receivePointer) <= rX;
+			receiveParity <= receiveParity + rX;
 			if (sendPointer = 0) then
 				sendState <= ParityBit;
 			else
 				sendState <= DataBit;
 			end if;
 		when ParityBit =>
-			if rX = 1 then
-
+			if rX = receiveParity then
+				receiveState <= StopBit;
 			else
-
+				receiveState <= Ready;
+				receiveTemp <= x"0000";
 			end if;
 		when StopBit =>
+			if rX = '1' then
+				receiveState <= StopBit2;
+			else
+				receiveState <= Ready;
+				receiveTemp <= x"0000";
+			end if;
 		when StopBit2 =>
-		when ClearData =>
+			if rX = '1' then
+				receiveState <= Ready;
+				receiveByte <= receiveTemp;
+			else
+				receiveState <= Ready;
+				receiveTemp <= x"0000";
+			end if;
 end if;
 end process;
-
-
 end architecture;
