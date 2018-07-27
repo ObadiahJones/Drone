@@ -1,6 +1,7 @@
 -- Author: Oliver Johnson
 -- Thrust Compute Unit entity
 -- TODO implement overflow/underflow error catching
+-- TODO figure out how the hell to scope the data bounds because we have -pi to pi, and operate between -1 to 1
 
 library IEEE;
 use IEEE.std_logic_1164.all;
@@ -19,6 +20,7 @@ entity pid is
     CLK                 : in std_logic; -- 200 MHz system clock
     RST                 : in std_logic; -- Active high synchronous reset
     ENABLE              : in std_logic; -- Module Enable
+    READY               : out std_logic; -- Status bit; high when module can accept a new input, low otherwise
     IN_VECTOR           : in std_logic_array(2 downto 0)(BIT_WIDTH - 1 downto 0)
     OUT_VALID           : out std_logic; -- Signals valid data on all OUT_DATA buses
     OUT_DATA            : out std_logic_array(NUM_ROTORS - 1 downto 0)(BIT_WIDTH - 1 downto 0) -- Signed fixed-point unity power levels for all rotors
@@ -27,97 +29,115 @@ end entity pid;
 
 architecture behavioral of pid is
 
-  signal long0                      : signed((2 * BIT_WIDTH) - 1 downto 0) := (others => '0'); -- std_logic_vector((2 * BIT_WIDTH) - 1 downto 0) := (others => '0');
-  signal long1                      : signed((2 * BIT_WIDTH) - 1 downto 0) := (others => '0'); -- std_logic_vector((2 * BIT_WIDTH) - 1 downto 0) := (others => '0');
-  signal long2                      : signed((2 * BIT_WIDTH) - 1 downto 0) := (others => '0'); -- std_logic_vector((2 * BIT_WIDTH) - 1 downto 0) := (others => '0');
+  constant NULL_SHORT               : signed(BIT_WIDTH - 1 downto 0) := (others => '0');
+  constant SATUR_P_SHORT            : signed(BIT_WIDTH - 1 downto 0) := '0' & (others => '1'); -- TODO Will this synthesize?
+  constant SATUR_N_SHORT            : signed(BIT_WIDTH - 1 downto 0) := '1' & (others => '0'); -- NULL_SHORT(BIT_WIDTH - 2 downto 0);
+
+  constant COS_THETA                : signed_vector(NUM_ROTORS - 1 downto 0)(BIT_WIDTH - 1 downto 0); -- TODO cosine function to initialize array
+  constant SIN_THETA                : signed_vector(NUM_ROTORS - 1 downto 0)(BIT_WIDTH - 1 downto 0); -- TODO sine function to initialize array
+
+  signal x_val                      : signed(BIT_WIDTH - 1 downto 0) := (others => '0');
+  signal y_val                      : signed(BIT_WIDTH - 1 downto 0) := (others => '0');
+  signal z_val                      : signed(BIT_WIDTH - 1 downto 0) := (others => '0');
+
+  signal long0                      : signed((2 * BIT_WIDTH) - 1 downto 0) := (others => '0');
+  signal long1                      : signed((2 * BIT_WIDTH) - 1 downto 0) := (others => '0');
+  signal long2                      : signed((2 * BIT_WIDTH) - 1 downto 0) := (others => '0');
+  signal long3                      : signed((2 * BIT_WIDTH) - 1 downto 0) := (others => '0');
+  signal long4                      : signed((2 * BIT_WIDTH) - 1 downto 0) := (others => '0');
+
+  signal short_vec0                 : signed_vector(NUM_ROTORS - 1 downto 0)(BIT_WIDTH - 1 downto 0) := (others => '0');
+  signal long_vec0                  : signed_vector(NUM_ROTORS - 1 downto 0)((2 * BIT_WIDTH) - 1 downto 0) := (others => (others => '0'));
+  signal long_vec1                  : signed_vector(NUM_ROTORS - 1 downto 0)((2 * BIT_WIDTH) - 1 downto 0) := (others => (others => '0'));
+  signal long_vec2                  : signed_vector(NUM_ROTORS - 1 downto 0)((2 * BIT_WIDTH) - 1 downto 0) := (others => (others => '0'));
 
   type state_type is (stIdle, stFlag, stRegParams, stMultiply, stSum);
   signal state                      : state_type := stIdle;
 
 begin
-
-  -- Process to trigger the PID execution once every SAMPLE_PERIOD milliseconds
-  trigger_proc : process(CLK)
+  pipeline_proc : process(CLK)
   begin
     if rising_edge(CLK) then
       if RST = '1' then
-        loop_trigger <= '0';
-        dwell_counter <= dwell_counter_max - '1';
-      else
-        if dwell_counter = to_unsigned(0, 32) then
-          loop_trigger <= '1';
-          dwell_counter <= dwell_counter_max - '1';
-        else
-          loop_trigger <= '0';
-          dwell_counter <= dwell_counter - '1';
-        end if;
-      end if;
-    end if;
-  end process trigger_proc;
-
-  pid_proc : process(CLK)
-  begin
-    if rising_edge(CLK) then
-      if RST = '1' then
-        state <= stIdle;
-        CTRL_VAR <= (others => '0');
+        READY <= '0';
         OUT_VALID <= '0';
-        SAMPLE_FLAG <= '0';
-        u_k0 <= (others => '0');
-        u_k1 <= (others => '0');
-        y_k0 <= (others => '0');
-        y_k1 <= (others => '0');
-        y_k2 <= (others => '0');
-        e_k0 <= (others => '0');
-        e_k1 <= (others => '0');
+        OUT_DATA <= (others => (others => '0'));
+
+        x_val <= (others => '0');
+        y_val <= (others => '0');
+        z_val <= (others => '0');
+        long0 <= (others => '0');
+        long1 <= (others => '0');
+        long2 <= (others => '0');
+        long3 <= (others => '0');
+        long4 <= (others => '0');
+        short_vec0 <= (others => (others => '0'));
+        long_vec0 <= (others => (others => '0'));
+        long_vec1 <= (others => (others => '0'));
+        long_vec2 <= (others => (others => '0'));
+
       else
         case state is
           when stIdle =>
-            CTRL_VAR <= (others => '0');
             OUT_VALID <= '0';
-            SAMPLE_FLAG <= '0';
-            if loop_trigger = '1' then
-              state <= stFlag;
+            OUT_DATA <= (others => (others => '0'));
+
+            if ENABLE = '1' then
+              READY <= '0';
+              x_val <= signed(IN_VECTOR(0));
+              y_val <= signed(IN_VECTOR(1));
+              z_val <= signed(IN_VECTOR(2));
+              long0 <= signed(IN_VECTOR(0)) * signed(IN_VECTOR(0));
+              long1 <= signed(IN_VECTOR(1)) * signed(IN_VECTOR(1));
+              array_gen0 : for i in 0 to NUM_ROTORS - 1 generate
+                long_vec0(i) <= signed(IN_VECTOR(0)) * COS_THETA(i);
+              end generate array_gen0;
+              state <= stOne;
+            else
+              READY <= '1';
+              x_val <= (others => '0');
+              y_val <= (others => '0');
+              z_val <= (others => '0');
+              long0 <= (others => '0');
+              long1 <= (others => '0');
+              long2 <= (others => '0');
+              long3 <= (others => '0');
+              long4 <= (others => '0');
+              short_vec0 <= (others => (others => '0'));
+              long_vec0 <= (others => (others => '0'));
+              long_vec1 <= (others => (others => '0'));
+              long_vec2 <= (others => (others => '0'));
             end if;
 
-          when stFlag =>
-            SAMPLE_FLAG <= '1';
-            state <= stRegParams;
+          when stOne =>
+            long2 <= sqrt(long0(BIT_WIDTH - 1 downto 0) + long1(BIT_WIDTH - 1 downto 0)); -- TODO determine if this will work / is the best implementation
+            long3 <= long0(BIT_WIDTH - 1 downto 0) / (long0(BIT_WIDTH - 1 downto 0) + long1(BIT_WIDTH - 1 downto 0)); --How the fuck does this synthesize?
+            array_gen1 : for i in 0 to NUM_ROTORS - 1 generate
+              short_vec0(i) <= z_val + long_vec0(i)(BIT_WIDTH - 1 downto 0);
+            end generate array_gen1;
+            state <= stTwo;
 
-          when stRegParams =>
-            SAMPLE_FLAG <= '0';
-            e_k1 <= e_k0;
-            e_k0 <= signed(SETPOINT) - signed(PROCESS_VAR);
-            u_k1 <= u_k0;
-            y_k2 <= y_k1;
-            y_k1 <= y_k0;
-            y_k0 <= signed(PROCESS_VAR);
-            sp_k0 <= signed(SETPOINT);
-            k_p <= signed(KP);
-            k_i <= signed(KI);
-            k_d <= signed(KD);
-            state <= stMultiply;
+          when stTwo =>
+            long4 <= sqrt(SATUR_P_SHORT - long3(BIT_WIDTH - 1 downto 0)); -- TODO determine if this will work / is the best implementation
+            array_gen2 : for i in 0 to NUM_ROTORS - 1 generate
+              long_vec1(i) <= long2(BIT_WIDTH - 1 downto 0) * SIN_THETA(i);
+            end generate array_gen2;
+            state <= stThree;
 
-          when stMultiply =>
-            long0 <= k_p * (y_k1 - y_k0);
-            long1 <= k_i * e_k0;
-            long2 <= k_d * ((y_k1(30 downto 1) & '0') - y_k2 - y_k0);
-            state <= stSum;
+          when stThree =>
+            array_gen3 : for i in 0 to NUM_ROTORS - 1 generate
+              long_vec2(i) <= (long_vec1(i)(BIT_WIDTH - 1 downto 0) * long4(BIT_WIDTH - 1 downto 0)) + short_vec0(i);
+            end generate array_gen3;
+            state <= stFour;
 
-          when stSum =>
-            CTRL_VAR <= std_logic_vector(u_k1 +
-                        long0((2 * BIT_WIDTH) - 1 downto BIT_WIDTH) +
-                        long1((2 * BIT_WIDTH) - 1 downto BIT_WIDTH) +
-                        long2((2 * BIT_WIDTH) - 1 downto BIT_WIDTH));
-            u_k0     <= u_k1 +
-                        long0((2 * BIT_WIDTH) - 1 downto BIT_WIDTH) +
-                        long1((2 * BIT_WIDTH) - 1 downto BIT_WIDTH) +
-                        long2((2 * BIT_WIDTH) - 1 downto BIT_WIDTH);
+          when stFour =>
             OUT_VALID <= '1';
+            array_gen4 : for i in 0 to NUM_ROTORS - 1 generate
+              OUT_DATA(i) <= long_vec2(i)(BIT_WIDTH - 1 downto 0);
+            end generate array_gen4;
             state <= stIdle;
 
         end case;
       end if;
     end if;
-  end process pid_proc;
 end architecture behavioral;
