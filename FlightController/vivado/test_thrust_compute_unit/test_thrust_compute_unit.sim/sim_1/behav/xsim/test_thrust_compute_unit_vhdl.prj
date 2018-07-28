@@ -1,0 +1,11 @@
+# compile vhdl design source files
+vhdl xil_defaultlib  \
+"../../../../../../hdl/ip/sqrt/sim/sqrt.vhd" \
+
+vhdl2008 xil_defaultlib  \
+"../../../../../../hdl/sources/common_pkg.vhd" \
+"../../../../../../hdl/sources/thrust_compute_unit.vhd" \
+"../../../../../../hdl/sim/test_thrust_compute_unit.vhd" \
+
+# Do not sort compile order
+nosort
