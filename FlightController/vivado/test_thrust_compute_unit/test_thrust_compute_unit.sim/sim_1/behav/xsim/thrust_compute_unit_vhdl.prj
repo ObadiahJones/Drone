@@ -1,0 +1,7 @@
+# compile vhdl design source files
+vhdl xil_defaultlib  \
+"../../../../../../hdl/sources/common_pkg.vhd" \
+"../../../../../../hdl/sources/thrust_compute_unit.vhd" \
+
+# Do not sort compile order
+nosort

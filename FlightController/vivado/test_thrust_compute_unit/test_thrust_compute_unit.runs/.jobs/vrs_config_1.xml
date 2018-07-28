@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<Runs Version="1" Minor="0">
+	<Run Id="sqrt_synth_1" LaunchDir="G:/workspace/Drone/FlightController/vivado/test_thrust_compute_unit/test_thrust_compute_unit.runs/sqrt_synth_1" FlowId="Vivado_Synthesis" FromStepId="vivado" ToStepId="vivado"/>
+</Runs>
+

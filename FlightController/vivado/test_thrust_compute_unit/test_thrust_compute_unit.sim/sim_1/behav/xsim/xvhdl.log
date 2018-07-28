@@ -1,0 +1,7 @@
+INFO: [VRFC 10-163] Analyzing VHDL file "G:/workspace/Drone/FlightController/hdl/ip/sqrt/sim/sqrt.vhd" into library xil_defaultlib
+INFO: [VRFC 10-307] analyzing entity sqrt
+INFO: [VRFC 10-163] Analyzing VHDL file "G:/workspace/Drone/FlightController/hdl/sources/common_pkg.vhd" into library xil_defaultlib
+INFO: [VRFC 10-163] Analyzing VHDL file "G:/workspace/Drone/FlightController/hdl/sources/thrust_compute_unit.vhd" into library xil_defaultlib
+INFO: [VRFC 10-307] analyzing entity thrust_compute_unit
+INFO: [VRFC 10-163] Analyzing VHDL file "G:/workspace/Drone/FlightController/hdl/sim/test_thrust_compute_unit.vhd" into library xil_defaultlib
+INFO: [VRFC 10-307] analyzing entity test_thrust_compute_unit
